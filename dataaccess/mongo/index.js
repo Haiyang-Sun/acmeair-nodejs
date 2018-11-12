@@ -13,7 +13,7 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 *******************************************************************************/
-// Dataaccess must implement 
+// Dataaccess must implement
 //	 	dbNames:  { customerName:, flightName:, flightSegmentName:, bookingName:, customerServiceName:, airportCodeMappingName:}
 // 		initializeDatabaseConnections(function(error))
 // 		insertOne(collname, doc, function(error, doc))
@@ -28,7 +28,7 @@ module.exports = function (settings) {
 
 	var mongodb = require('mongodb');
 	var log4js = require('log4js');
-	
+
 	var logger = log4js.getLogger('dataaccess/mongo');
 	logger.setLevel(settings.loggerLevel);
 
@@ -52,7 +52,7 @@ module.exports = function (settings) {
 			  var serviceKey = Object.keys(env)[0];
 			  if (serviceKey)
 	          {
-				  mongo = env[serviceKey][0]['credentials'];                 
+				  mongo = env[serviceKey][0]['credentials'];
 	     		  logger.info("mongo: %j",mongo);
 			  }
 		}
@@ -82,7 +82,7 @@ module.exports = function (settings) {
 		    "db":"acmeair"
 		 }
 		}
-		
+
 		var generate_mongo_url = function(obj){
 			if (process.env.MONGO_URL)
 			{
@@ -110,12 +110,9 @@ module.exports = function (settings) {
 		}
 
 		var mongourl = generate_mongo_url(mongo);
-		
+
 		var c_opt = {server:{auto_reconnect:true,poolSize: settings.mongoConnectionPoolSize}};
-	    mongodb.connect(mongourl, c_opt, function(err, conn){
-	             if (err){
-	                callback(err);
-	             }else {
+	    mongodb.connect(mongourl, c_opt).then(function(conn){
 	             dbclient=conn;
 	             // Add ensureIndex here
 	             dbclient.ensureIndex(module.dbNames.bookingName, {customerId:1}
@@ -131,8 +128,8 @@ module.exports = function (settings) {
 	            	 logger.info("ensureIndex:"+err+":"+indexName);
 	             });
 	             callback(null);
-	             }
-	        });
+
+	        }, function (err) {callback(err);});
 	}
 
 	module.insertOne = function (collectionname, doc, callback /* (error, insertedDocument) */) {
@@ -142,7 +139,11 @@ module.exports = function (settings) {
 				  callback(error, null);
 			  }
 			  else{
-				  collection.insert(doc, {safe: true}, callback);
+				  collection.insert(doc, {safe: true}).then(
+            (insertedDocument)=>{
+              callback(null, insertedDocument)},
+            (err)=>{callback(err)},
+          );
 			  }
 			});
 	};
@@ -155,17 +156,18 @@ module.exports = function (settings) {
 				  callback(error, null);
 			  }
 			  else{
-				collection.find({_id: key}).toArray(function(err, docs) {
-					if (err) callback (err, null);
-	                var doc = docs[0];
-	                if (doc)
-	                	callback(null, doc);
-	                else
-	                {
-	                	logger.debug("Not found:"+key);
-	                	callback(null, null)
-	                }
-				});
+  				collection.find({_id: key}).toArray().then(
+            (docs) => {
+              var doc = docs[0];
+              if (doc) {
+                callback(null, doc);
+              }else{
+                logger.debug("Not found:"+key);
+                callback(null, null)
+              }
+            },
+            (err)=>{callback (err, null);}
+          );
 			  }
 		});
 	};
@@ -177,10 +179,10 @@ module.exports = function (settings) {
 				  callback(error, null);
 			  }
 			  else{
-				collection.update({_id: doc._id}, doc, {safe: true}, function(err, numUpdates) {
-					logger.debug(numUpdates);
-					callback(err, doc);
-				});
+  				collection.update({_id: doc._id}, doc, {safe: true}).then(
+            (numUpdates)=>{logger.debug(numUpdates);callback(null, doc);},
+            (err)=>{callback(err, null);}
+          );
 			  }
 		});
 	};
@@ -192,11 +194,11 @@ module.exports = function (settings) {
 				  callback(error, null);
 			  }
 			  else{
-				collection.remove({_id: condition._id}, {safe: true}, function(err, numDocs) {
-					if (err) callback (err);
-					else callback(null);
-				});
-			  }
+    			collection.remove({_id: condition._id}, {safe: true}).then(
+            (numDocs)=>{callback(null);},
+            (err)=>{callback (err)}
+          );
+        }
 		});
 	};
 
@@ -205,16 +207,15 @@ module.exports = function (settings) {
 			  if (error){
 				  logger.error("findBy hit error:"+error);
 				  callback(error, null);
-			  }
-			  else{
-				collection.find(condition).toArray(function(err, docs) {
-					if (err) callback (err, null);
-					else callback(null, docs);
-				});
-			  }
-		});
-	};
-	
+			  } else {
+    			collection.find(condition).toArray().then(
+            (docs)=>{callback(null, docs);},
+            (err)=>{callback (err, null);}
+          );
+		    }
+    });
+  };
+
 	module.count = function(collectionname, condition, callback/* (error, docs) */) {
 		dbclient.collection(collectionname,function(error, collection){
 			  if (error){
@@ -222,15 +223,14 @@ module.exports = function (settings) {
 				  callback(error, null);
 			  }
 			  else{
-				collection.count(condition, function (err, count) {
-					if (err) callback (err, null);
-					else callback(null, count);
-				});
+  				collection.count(condition).then(
+            (count)=>{callback(null, count);},
+            (err)=>{callback (err, null);},
+          );
 			  }
 		});
 	};
-	
+
 	return module;
 
 }
-
